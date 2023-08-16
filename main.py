@@ -3,7 +3,10 @@ import re
 from io import BytesIO
 from time import strftime, localtime
 
-from PIL import Image
+from PIL import Image, ImageFile
+ImageFile.LOAD_TRUNCATED_IMAGES = True
+Image.MAX_IMAGE_PIXELS = None
+
 from sys import argv
 from hashlib import md5
 
@@ -86,7 +89,6 @@ def dbx2png(dbx_file_name: str) -> None:
 			except FileExistsError:
 				pass
 			except OSError:
-				print(save_filename)
 				save_filename = '.'.join(save_filename.split('.')[:-1]+['png'])
 				img.save(save_filename)
 
@@ -106,6 +108,12 @@ def dir2dbx(dir_path: str) -> None:
 	save_dir = path_str.join(dir_path.split(path_str)[:-1])
 	dbx_path = path_str.join([save_dir, fast_save])
 
+	path_list = [__file_name.split(path_str) for __file_name in file_list]
+	common_prefix = find_longest_common_prefix(path_list)
+	root_for_file_whose_name_is_too_long = path_str.join(common_prefix + ['file_whose_name_is_too_long'])
+	file_name_that_is_too_long: dict = {}
+	index_of_file_name_that_is_too_long: int = 1
+
 	with open(dbx_path, 'wb') as save:
 
 		# ---- HEAD ---- #
@@ -117,7 +125,20 @@ def dir2dbx(dir_path: str) -> None:
 		# ----- FILE DIRECTORY ---- #
 
 		for file in file_list:
-			x += bytearray(file, encoding='utf-8').zfill(256)
+			b_file_name = bytearray(file, encoding='utf-8')
+			if len(b_file_name) > 256:
+				file_extent: str = file.split('.')[-1]
+				changed_file_name = path_str.join(
+					[
+						root_for_file_whose_name_is_too_long,
+						f'file_name_that_is_too_long_{index_of_file_name_that_is_too_long}.{file_extent}'
+					]
+				)
+				b_file_name = bytearray(changed_file_name, encoding='utf-8')
+				file_name_that_is_too_long[file] = changed_file_name
+				index_of_file_name_that_is_too_long += 1
+
+			x += b_file_name.zfill(256)
 			x += bytearray(str(os.path.getsize(file)), encoding='utf-8').zfill(16)  # 128 -> 16
 		file_md5.update(x)
 		save.write(x)
@@ -128,10 +149,7 @@ def dir2dbx(dir_path: str) -> None:
 		for file in file_list:
 			with open(file, 'rb') as f1:
 				n = f1.read()
-				try:
-					time_array.append(strftime('%Y%m%d%H%M%S', localtime(os.stat(file).st_mtime)))
-				except Exception as e:
-					time_array.append('0'*14)
+				time_array.append(strftime('%Y%m%d%H%M%S', localtime(os.stat(file).st_mtime)))
 				file_md5.update(n)
 				save.write(n)
 
@@ -144,6 +162,18 @@ def dir2dbx(dir_path: str) -> None:
 
 		for time_str in time_array:
 			save.write(bytearray(time_str, encoding='utf-8'))
+
+	# ---- OTHERS ---- #
+
+	if file_name_that_is_too_long:
+		text_file_path = '.'.join(dbx_path.split('.')[:-1] + ['convert_log', 'txt'])
+		with open(text_file_path, 'w', encoding='utf-8') as text_file:
+			text_file.write(
+				'Some image files have been moved because their names are longer than 256 under encoding: "utf-8".\n')
+			text_file.write(
+				'Here are the mappings:\n')
+			for key, value in file_name_that_is_too_long.items():
+				text_file.write(f'Origin file:\n {key}\n has been moved to:\n {value}\n')
 
 
 def get_structure(dbx_file_name: str) -> None:
@@ -167,12 +197,12 @@ def get_structure(dbx_file_name: str) -> None:
 				result.append(f)
 		return bool(len(result))
 
-	def has_dir(fake_file: str, fake_file_list: list[str]) -> bool:
-		for item in get_sub_file(fake_file, fake_file_list):
-
-			if fake_is_dir(''.join([item, fake_file]), fake_file_list):
-				return True
-		return False
+	# def has_dir(fake_file: str, fake_file_list: list[str]) -> bool:
+	# 	for item in get_sub_file(fake_file, fake_file_list):
+	#
+	# 		if fake_is_dir(''.join([item, fake_file]), fake_file_list):
+	# 			return True
+	# 	return False
 
 	def _sort_(file_list: list[str]) -> list:
 
@@ -204,9 +234,9 @@ def get_structure(dbx_file_name: str) -> None:
 				while search_length >= 1:
 					sub_list = []
 					_path = to_be_sort[0].split(path_str)[:depth]
-					for i in range(search_length - 1, -1, -1):
-						if to_be_sort[i].split(path_str)[:depth] == _path:
-							sub_list.append(to_be_sort.pop(i))
+					for index in range(search_length - 1, -1, -1):
+						if to_be_sort[index].split(path_str)[:depth] == _path:
+							sub_list.append(to_be_sort.pop(index))
 					sub.append(sub_list)
 
 					search_length = len(to_be_sort)
