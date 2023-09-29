@@ -1,14 +1,14 @@
 import os
 import re
 from io import BytesIO
+from sys import argv
 from time import strftime, localtime
 
 from PIL import Image, ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
-Image.MAX_IMAGE_PIXELS = None
 
-from sys import argv
 from hashlib import md5
+
 
 if os.name == 'nt':
 	path_str = '\\'
@@ -43,7 +43,7 @@ def get_data_and_update_its_md5(_md5_: md5, _file_object_, size: int):
 
 
 def dbx2png(dbx_file_name: str) -> None:
-	save_dir = path_str.join(dbx_file_name.split(path_str)[:-1])
+	save_dir = path_str.join(dbx_file_name.split(path_str)[:-1] + ['.'.join(dbx_file_name.split(path_str)[-1].split('.')[:-1])])
 	with open(dbx_file_name, 'rb') as dbx_file:
 		dbx_file.seek(0, 0)
 		magic_num = dbx_file.read(9).decode('utf-8')
@@ -53,9 +53,17 @@ def dbx2png(dbx_file_name: str) -> None:
 		test_bytes = dbx_file.read(8).lstrip(b'0')
 		dbx_file.seek(9, 0)
 		if test_bytes:
-			INDEX_LENGTH = 4
-			TOTAL_SIZE_LENGTH = 4
+			test_bytes = dbx_file.read(16).lstrip(b"0").decode('utf-8')
+			try:
+				_ = int(test_bytes)
+			except ValueError:
+				INDEX_LENGTH = 4
+				TOTAL_SIZE_LENGTH = 4
+			else:
+				INDEX_LENGTH = 8
+				TOTAL_SIZE_LENGTH = 8
 			IMG_SIZE_LENGTH = 16
+			dbx_file.seek(9, 0)
 		else:
 			INDEX_LENGTH = 32
 			TOTAL_SIZE_LENGTH = 128
@@ -76,9 +84,9 @@ def dbx2png(dbx_file_name: str) -> None:
 		common_prefix = find_longest_common_prefix(path_list)[:-1]
 		to_replace = path_str.join(common_prefix)
 
-		for name, size in zip(names, sizes):
-			save_filename = name.replace(to_replace, save_dir)
-			img_bin = dbx_file.read(size)
+		for _name_, _size_ in zip(names, sizes):
+			save_filename = _name_.replace(to_replace, save_dir)
+			img_bin = dbx_file.read(_size_)
 			img_bin_io = BytesIO(img_bin)
 			img = Image.open(img_bin_io)
 			try:
@@ -89,6 +97,7 @@ def dbx2png(dbx_file_name: str) -> None:
 			except FileExistsError:
 				pass
 			except OSError:
+				# print(save_filename)
 				save_filename = '.'.join(save_filename.split('.')[:-1]+['png'])
 				img.save(save_filename)
 
@@ -110,7 +119,8 @@ def dir2dbx(dir_path: str) -> None:
 
 	path_list = [__file_name.split(path_str) for __file_name in file_list]
 	common_prefix = find_longest_common_prefix(path_list)
-	root_for_file_whose_name_is_too_long = path_str.join(common_prefix + ['file_whose_name_is_too_long'])
+	root_for_file_whose_name_is_too_long = path_str.join(common_prefix+['file_whose_name_is_too_long'])
+
 	file_name_that_is_too_long: dict = {}
 	index_of_file_name_that_is_too_long: int = 1
 
@@ -119,8 +129,8 @@ def dir2dbx(dir_path: str) -> None:
 		# ---- HEAD ---- #
 
 		x = bytearray(MAGIC_NUM, encoding='utf-8')
-		x += bytearray('0', encoding='utf-8').zfill(4)  # 32 -> 4
-		x += bytearray(str(len(file_list)), encoding='utf-8').zfill(4)  # 128 -> 4 // The same as index.
+		x += bytearray('0', encoding='utf-8').zfill(8) # 32 -> 4
+		x += bytearray(str(len(file_list)), encoding='utf-8').zfill(8)  # 128 -> 4 // The same as index.
 
 		# ----- FILE DIRECTORY ---- #
 
@@ -146,10 +156,10 @@ def dir2dbx(dir_path: str) -> None:
 		# ---- FILE CONTENT ---- #
 
 		time_array = []
-		for file in file_list:
-			with open(file, 'rb') as f1:
+		for current_file_name in file_list:
+			with open(current_file_name, 'rb') as f1:
 				n = f1.read()
-				time_array.append(strftime('%Y%m%d%H%M%S', localtime(os.stat(file).st_mtime)))
+				time_array.append(strftime('%Y%m%d%H%M%S', localtime(os.stat(current_file_name).st_mtime)))
 				file_md5.update(n)
 				save.write(n)
 
@@ -163,17 +173,15 @@ def dir2dbx(dir_path: str) -> None:
 		for time_str in time_array:
 			save.write(bytearray(time_str, encoding='utf-8'))
 
-	# ---- OTHERS ---- #
-
-	if file_name_that_is_too_long:
-		text_file_path = '.'.join(dbx_path.split('.')[:-1] + ['convert_log', 'txt'])
-		with open(text_file_path, 'w', encoding='utf-8') as text_file:
-			text_file.write(
-				'Some image files have been moved because their names are longer than 256 under encoding: "utf-8".\n')
-			text_file.write(
-				'Here are the mappings:\n')
-			for key, value in file_name_that_is_too_long.items():
-				text_file.write(f'Origin file:\n {key}\n has been moved to:\n {value}\n')
+		if file_name_that_is_too_long:
+			text_file_path = '.'.join(dbx_path.split('.')[:-1]+['convert_log', 'txt'])
+			with open(text_file_path, 'w', encoding='utf-8') as text_file:
+				text_file.write(
+					'Some image files have been moved because their names are longer than 256 under encoding: "utf-8".\n')
+				text_file.write(
+					'Here are the mappings:\n')
+				for key, value in file_name_that_is_too_long.items():
+					text_file.write(f'Origin file:\n {key}\n has been moved to:\n {value}\n')
 
 
 def get_structure(dbx_file_name: str) -> None:
@@ -273,13 +281,20 @@ def get_structure(dbx_file_name: str) -> None:
 		test_bytes = dbx_file.read(8).lstrip(b'0')
 		dbx_file.seek(9, 0)
 		if test_bytes:
-			INDEX_LENGTH = 4
-			TOTAL_SIZE_LENGTH = 4
+			test_bytes = dbx_file.read(16).lstrip(b"0").decode('utf-8')
+			try:
+				_ = int(test_bytes)
+			except ValueError:
+				INDEX_LENGTH = 4
+				TOTAL_SIZE_LENGTH = 4
+			else:
+				INDEX_LENGTH = 8
+				TOTAL_SIZE_LENGTH = 8
 			IMG_SIZE_LENGTH = 16
+			dbx_file.seek(9, 0)
 		else:
 			INDEX_LENGTH = 32
 			TOTAL_SIZE_LENGTH = 128
-			IMG_SIZE_LENGTH = 128
 
 		_ = dbx_file.read(INDEX_LENGTH)
 		total_size = int(dbx_file.read(TOTAL_SIZE_LENGTH).lstrip(b'0').decode('utf-8'))
