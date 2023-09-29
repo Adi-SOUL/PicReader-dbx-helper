@@ -78,6 +78,8 @@ auto write_img_file(wstring file_name, wstring& file_name_img, long long int sta
 }
 
 auto dbx2img(wstring file_name) -> bool {
+	int LENGTH_OF_INDEX = 8;
+	int LENGTH_OF_TOTAL_NUM = 8;
 	vector<wstring> splited_file_path = splited_string(file_name, path_char);
 	vector<wstring> splited_save_dir;
 	for (int i = 0; i < splited_file_path.size() - 1; i++) {
@@ -103,7 +105,13 @@ auto dbx2img(wstring file_name) -> bool {
 	if (magic_num != MAGIC_NUM) {
 		return false;
 	}
-	
+	try{
+		string test_string = get_string_from_file(dbx_file, 16);
+	}catch(const std::exception &e){
+		LENGTH_OF_INDEX = 4;
+		LENGTH_OF_TOTAL_NUM = 4;
+	}
+	dbx_file.seekg(LENGTH_OF_MAGIC_NUM, ios::beg);
 	string str_index = get_string_from_file(dbx_file, LENGTH_OF_INDEX);
 	string str_total_num = get_string_from_file(dbx_file, LENGTH_OF_TOTAL_NUM);
 	int total_num = std::stoi(str_total_num);
