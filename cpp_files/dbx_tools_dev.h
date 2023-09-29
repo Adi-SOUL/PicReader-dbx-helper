@@ -16,8 +16,6 @@
 #include <thread>
 #include <chrono>
 constexpr int LENGTH_OF_MAGIC_NUM = 9;
-constexpr int LENGTH_OF_INDEX = 4;
-constexpr int LENGTH_OF_TOTAL_NUM = 4;
 constexpr int LENGTH_OF_IMAGE_SIZE = 16;
 constexpr int LENGTH_OF_IMAGE_NAME = 256;
 
